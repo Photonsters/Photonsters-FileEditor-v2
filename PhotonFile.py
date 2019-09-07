@@ -952,8 +952,15 @@ class LayerOps:
 
             self.clipboardDef["Image Address"]=int_to_bytes(lA)
     
-            # If we inserting last layer, we correct layerNr
-            if insertLast: layerNr = layerNr + 1  # fix temporary reduced layerNr
+            # If we inserting last layer, we correct layerNr and layerheight
+            if insertLast: 
+                layerNr = layerNr + 1  # fix temporary reduced layerNr
+                if layerNr>0: 
+                    curHeight=bytes_to_float(self.photonfile.LayerDefs[layerNr-1]["Layer height (mm)"])
+                    self.clipboardDef["Layer height (mm)"]=float_to_bytes(
+                                                            curHeight+
+                                                            bytes_to_float(self.photonfile.Header["Layer height (mm)"])
+                                                            )
             if deb:print ("Correct layerNr because last:",layerNr)
 
             # Shift start addresses of RawData in all LayerDefs due to extra layerdef (36 bytes)
