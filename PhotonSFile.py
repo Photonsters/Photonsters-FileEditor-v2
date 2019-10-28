@@ -1,6 +1,7 @@
 """
 https://github.com/Photonsters/anycubic-photon-docs/blob/dev/Temp-resources/2019-03-05%20photons%202.0%20file%20format.pdf?fbclid=IwAR1gwIrM5wnPegje-_0jXI9wee-ErZkUsutvsnnCFzDZvT-y-Cgs1aPLrUg
 https://github.com/k3wals/PhotonS_Decoder?fbclid=IwAR0mALhZfTuqxAKunH8dXBPWytcrG2AUST0e4O5A-d9YicNneREuWo7EXAk
+/home/nard/PhotonFile/test/Layer-Structure.txt
 
 
 Loads/Save .photon files (from the Anycubic Photon Slicer) in memory and allows editing of settings and bitmaps.
@@ -88,6 +89,8 @@ def convVal(val):
         nr = float_to_bytes(val)
         return nr
     raise Exception("PhotonFile.convVal received unhandled var type",type(val),"!")
+
+
 ########################################################################################################################
 ## File structure
 ########################################################################################################################
@@ -102,46 +105,53 @@ def convVal(val):
 
 pfStruct_Header = [
     ("Header",              6, tpByte,  False, ""),
-    ["Pixel size (mm)",     8, tpFloat, False, "Pixels size (usually 0.047mm)."], # 3 ints
+    ("Pixel size (mm)",     8, tpFloat, False, "Pixels size (usually 0.047mm)."), # 3 ints
     ("Layer height (mm)",   8, tpFloat, True,  "Default layer height."),
     ("Exp. time (s)",       8, tpFloat, True,  "Default exposure time."),
-    ("Off time (s)",        8, tpFloat, True,  "Time UV is turned of between layers. \n Minimum is 6.5 sec, the time to rise the \n build plate and dip back in the resin."),
+    ("Off time (s)",        8, tpFloat, True,  "Time UV is turned off between layers. \n Minimum is 6.5 sec, the time to rise the \n build plate and dip back in the resin."),
     ("Exp. bottom (s)",     8, tpFloat, True,  "Exposure time for bottom layers."),
     ("# Bottom Layers",     4, tpInt,   True,  "Number of bottom layers.\n (These have different exposure time.)"),
+    ("Lift dist. (mm)",     8, tpFloat, True,  "Z Lift distance in mm"),
+    ("Lift speed (mm/s)",   8, tpFloat, True,  "Z lift speed in mm/s"),
+    ("Lift retract(mm/s)",  8, tpFloat, True,  "z retract speed in mm/s"),
+    ("Volume",              8, tpFloat, False, "volume of the print in cubic centimeters ( 0.04725 * 0.04725 * layerHeight * totalNumberOfWhitePixels * 0.001)"),
 ]
 
 pfStruct_Previews = [
-    ("Resolution X",        4, tpInt,   False, "X-Resolution of preview pictures."),
+    ("Resolution X",        4, tpInt,   False, "X-Resolution of preview picture."),
+    ("unknown 0",           4, tpInt,   False, "# 86 (4) 4 bytes: 00 00 00 2A (42)"),
     ("Resolution Y",        4, tpInt,   False, "Y-Resolution of preview pictures."),
-    ("Image Address",       4, tpInt,   False, "Address where the raw \n image can be found."),  # start of rawData0
-    ("Data Length",         4, tpInt,   False, "Size [in bytes) of the \n raw image."),  # size of rawData0
-    ["padding",         4 * 4, tpByte,  False, ""],  # 4 ints
-    ("Image Data",         -1, tpByte,  False, "The raw image."),
-    ["padding tail",        0, tpByte,  False, ""]
+    ("unknown 1",           4, tpInt,   False, "# 94 (4) 4 bytes: 00 00 00 0A (10)"),
+    ("Image Data",      75264, tpByte,  False, "The raw image."),
 ]
 
-pfStruct_Previews_Padding = ["padding",            0, tpByte,  False, ""]
+# Just before layers we have an int with nr of layers
+# We will store this in the Header
+nrLayersString = "# Layers" #String is used in multiple locations and thus can be edited here
 
-# The exposure time and off times are ignored by Photon printer, layerheight not and is cumulative
+#pfStruct_Previews_Padding = ["padding",            0, tpByte,  False, ""]
+
 pfStruct_LayerDef = [
-    ("Layer height (mm)",   4, tpFloat, True,  "Height at which this layer \n should be printed."),
-    ("Exp. time (s)",       4, tpFloat, False, "Exposure time for this layer.\n [Based on General Info.)"),
-    ("Off time (s)",        4, tpFloat, False, "Off time for this layer.\n (Based on General Info.)"),
-    ("Image Address",       4, tpInt,   False, "Address where the raw image \n can be found."),#dataStartPos -> Image Address
-    ("Data Length",         4, tpInt,   False, "Size (in bytes) of the raw image."),  #size of rawData+lastByte(1)
-    ["padding tail",         4 * 4, tpByte,  False, ""] # 4 ints
+    ("# White pixels",      4, tpInt,  False, "Number of white pixels in this layer (for some reason)"),
+    ("padding",             8, tpByte, False, " 00 00 00 00 00 00 00 00"),
+    ("Resolution X",        4, tpInt,  False, "lcd width in px"),
+    ("Resolution Y",        4, tpInt,  False, "lcd height in px"),
+    ("Image Addr. delta",   4, tpInt,  False, "number of bits until the next layer starts"),
+    ("padding tail",        4, tpByte, False, "trailing bytes A0 05 50 00"),
 ]
 
-pfStruct_LayerDefs_Padding = ["padding",            0, tpByte,  False, ""]
+#pfStruct_LayerDefs_Padding = ["padding",            0, tpByte,  False, ""]
 
+# Each LayerDef is immediately followed by LayerData
+# For easier editing and conformity to PhotonFile we store them seperately
 pfStruct_LayerData = [
-    ("Raw",              -1, tpByte, True, "rle encoded bytes"),
-    ["padding tail",          0, tpByte, False, ""]
+    ("Raw",                -1, tpByte, True, "rle encoded bytes"),
+    ["padding tail",        0, tpByte, False, ""]
 ]
 
 pfStruct_LayerDatas_Padding = ["padding",            0, tpByte,  False, ""] # after all Datas until end of file
 
-
+# Signatures are still not defined
 KNOWN_SIGNATURES={
     "H-12-24 / P0-16-0 / Pt-0 / L0-16 / Lt-0 / D0-0 / Dt-0":"ACPhotonSlicer",
     "H-12-28 / P0-16-0 / Pt-60 / L0-16 / Lt-0 / D0-0 / Dt-0":"ChituBox 1.4.0"
@@ -330,9 +340,16 @@ class PreviewOps:
         #print ("len",len(rleData))
         return (width,height,bytes(rleData))
     
-    def __decodeRLE2Image24b(self,rleData,w:int,h:int) -> numpy.ndarray: 
+    def __decodeImage24b(self,rleData,w:int,h:int) -> numpy.ndarray: 
         # Make room for new image
-        imgArray=numpy.zeros((w,h,3),dtype=numpy.uint8)       
+        # 75264 bytes preview Image, preview Width * preview Height * 2 byte per pixel
+        #   (second byte << 8 | first byte) to get the pixel data
+        #   R: first 5 bits * 8
+        #   one bit is unused, 
+        #   G: next five * 8
+        #   B: last five * 8 
+
+        imgArray=numpy.zeros((h,w,3),dtype=numpy.uint8)       
 
         # Decode bytes to colors and draw lines of that color on the pygame surface
         idx = 0
@@ -350,26 +367,18 @@ class PreviewOps:
             blue = round((b12 & 0x1F) << 3 )
             col = (red, green, blue)
 
-            # If the X bit is set, then the next 2 bytes (little endian) masked with 0xFFF represents how many more times to repeat that pixel.
-            nr = 1
-            if b12 & 0x20:
-                nr12 = rleData[idx + 1] << 8 | rleData[idx + 0]
-                idx += 2
-                nr += nr12 & 0x0FFF
-
             # Draw (nr) many pixels of the color
-            for i in range(0, nr, 1):
-                x = int((pixelIdx % w))
-                y = int((pixelIdx / w))
-                imgArray[x,y,0]=red
-                imgArray[x,y,1]=green
-                imgArray[x,y,2]=blue
-                pixelIdx += 1
+            x = int((pixelIdx / w))
+            y = int((pixelIdx % w))
+            imgArray[x,y,0]=red
+            imgArray[x,y,1]=green
+            imgArray[x,y,2]=blue
+            pixelIdx += 1
 
         return imgArray
                 
     def get(self, prevNr:int, retType:str='i')->(bytes,numpy.ndarray):
-        """ Decodes a RLE byte array from PhotonFile object to a pygame surface.
+        """ Decodes a byte array from PhotonFile object.
             Based on https://github.com/Reonarudo/pcb2photon/issues/2
             Encoding scheme:
                 The color (R,G,B) of a pixel spans 2 bytes (little endian) and each color component is 5 bits: RRRRR GGG GG X BBBBB
@@ -380,14 +389,15 @@ class PreviewOps:
         self.photonfile.isDrawing = True
 
         # Retrieve resolution of preview image and set pygame surface to that size.
+        prevNr=0
+        print ("prevNr",prevNr)
         w = bytes_to_int(self.photonfile.Previews[prevNr]["Resolution X"])
         h = bytes_to_int(self.photonfile.Previews[prevNr]["Resolution Y"])
-        s = bytes_to_int(self.photonfile.Previews[prevNr]["Data Length"])
-            
+
         # Retrieve raw image data and add last byte to complete the byte array
         rleData = self.photonfile.Previews[prevNr]["Image Data"]
 
-        numpyArray2Duint8RGB=self.__decodeRLE2Image24b(rleData,w,h) 
+        numpyArray2Duint8RGB=self.__decodeImage24b(rleData,w,h) 
 
         if retType[0]=='r': #byte array        
             return rleData 
@@ -606,7 +616,7 @@ class LayerOps:
         if npArray.ndim==3:
             npArray=npArray[:,:,0]
         npArray_1D_uint8=npArray.flatten().astype(numpy.uint8)        
-        rlebytes= RLE.encode8bImage2RLE(npArray_1D_uint8)        
+        rlebytes,whitepixels= RLE.encode8bImage2RLE(npArray_1D_uint8)        
         #return [layerNr,rlebytes] # results are presented to callback in order, layerNr is not needed
         return rlebytes # results are presented to callback in order, layerNr is not needed
 
@@ -786,12 +796,62 @@ class LayerOps:
     def paste (self,layerNr:int,saveToHistory:bool=False):
         self.insert('clipboard',layerNr,saveToHistory)
 
-    def insert( self,
-                image:(str,numpy.ndarray,bytes),
-                layerNr:int,
-                saveToHistory:bool=False):
+    def encode8bImage2RLE(self,imgArray):
+        """ Converts numpy 1D/uint8 array (1 byte per color) to RLE encoded byte string.
+            This pyx code is about 30x faster than numpy code in py file
 
-        deb=False
+            Encoding scheme:
+                Highest bit of each byte is color (black or white)
+                Lowest 7 bits of each byte is repetition of that color, with max of 125 / 0x7D
+            Credits for speed to:
+                https://kogs-www.informatik.uni-hamburg.de/~seppke/content/teaching/wise1314/20131128_letsch-gries-boomgarten-cython.pdf
+                https://stackoverflow.com/questions/53135050/why-is-cython-only-20-faster-on-runlengthencode-b-w-image
+        """
+        # Some constants for nr of pixels and last pixelnr
+        nrPixels = 3686400 #(width, height) = (1440, 2560)
+        lastPixel = nrPixels - 1
+        # Make room for rleData (size equal to nr of pixels to encode should suffice)
+        rleData = numpy.zeros((nrPixels),dtype=numpy.uint8)
+
+        # Count number of pixels with same color up until 0x7D/125 repetitions
+        color = 0
+        prevColor = 0
+        r=None
+        nrOfColor = 0
+        encValue = 0
+        pixelNr=0
+        nrBytes=0
+        prevColor = imgArray[0] >> 7 #prevColor = nocolor
+        for pixelNr in range(nrPixels):
+            r = imgArray[pixelNr]
+            color = r >> 7 #if (r<128) color = 1 else: color = 0
+            if color == prevColor and nrOfColor < 0x7D:# and not isLastPixel:
+                nrOfColor = nrOfColor + 1
+            else:
+                encValue = (prevColor << 7) | nrOfColor  # push color (B/W) to highest bit and repetitions to lowest 7 bits.
+                rleData[nrBytes]=encValue
+                nrBytes = nrBytes+1
+                prevColor = color
+                nrOfColor = 1
+        # Handle lastpixel, we did nrOfColor++ once too many
+        nrOfColor=nrOfColor-1
+        encValue = (prevColor << 7) | nrOfColor  # push color (B/W) to highest bit and repetitions to lowest 7 bits.
+        rleData[nrBytes] = encValue
+        nrBytes = nrBytes + 1
+
+        # Remove excess bytes and return rleData
+        rleData=rleData[:nrBytes]
+        whitepixels=0
+        return (bytes(rleData),whitepixels)
+
+    def insert( self,
+                image:(str,numpy.ndarray,bytes),                
+                layerNr:int,
+                saveToHistory:bool=False,
+                whitepixels=-1
+                ):
+        deb=True
+        if deb: print ("line 844")
 
         # Check if order arguments is correct
         if type(layerNr)!=int:
@@ -823,8 +883,8 @@ class LayerOps:
                 raise Exception(f"LayerOps.insert needs an CV2 Image with dimensions of 1440x2560 and 8 bit. Got {image.shape[0]}x{image.shape[1]}x{24 if image.ndim==3 else 8} ({image.dtype})")
             
             npArray_1D_uint8=image.flatten()#.astype(numpy.uint8)        
-            rleBytearray=RLE.encode8bImage2RLE(npArray_1D_uint8)
-            self.insert(rleBytearray,layerNr,saveToHistory)
+            rleBytearray,whitepixels=self.encode8bImage2RLE(npArray_1D_uint8)
+            self.insert(rleBytearray,layerNr,saveToHistory,whitepixels)
             return
 
         # Here we are inserting RLE              
@@ -846,93 +906,39 @@ class LayerOps:
                 print ("  Insert new layer at Nr   : ",layerNr)
                 print ("  Append (insertLast)      : ",insertLast)
                 print ("  Layer Count              : ",self.count())
-                print ("  Header: Layer Defs (addr): ",bytes_to_int(self.photonfile.Header["Layer Defs (addr)"]))
-                if self.count()>0:
-                    print ("  LayerDef(0): Data (addr) : ",bytes_to_int(self.photonfile.LayerDefs[0]["Image Address"]))
+                #print ("  Header: Layer Defs (addr): ",bytes_to_int(self.photonfile.Header["Layer Defs (addr)"]))
+                #if self.count()>0:
+                #    print ("  LayerDef(0): Data (addr) : ",bytes_to_int(self.photonfile.LayerDefs[0]["Image Address"]))
 
-            # Check deltaHeight
-            deltaHeight = self.photonfile.layers.height(layerNr)
+            # Calc layer delta
+            delta = 24+8+8*len(self.LayerData[layerNr]['Raw'])
 
             # Make duplicate of layerDef and layerData if not pasting from clipboard
             if fromClipboard == False:
                 if self.count()>0:
                     self.clipboardDef=self.__realDeepCopy(self.photonfile.LayerDefs[layerNr])
-                    self.clipboardDef["Data Length"]=int_to_bytes(len(image))
+                    self.clipboardDef["# White pixels"]   = int_to_bytes(whitepixels)
+                    self.clipboardDef["Image Addr. delta"]= int_to_bytes(delta)
+
                     self.clipboardData=self.__realDeepCopy(self.photonfile.LayerData[layerNr])
                     self.clipboardData["Raw"]=image
                 else:
                     # The exposure time and off times are ignored by Photon printer, layerheight not and is cumulative
                     self.clipboardDef={}
-                    self.clipboardDef["Layer height (mm)"]= self.photonfile.Header["Layer height (mm)"]
-                    self.clipboardDef["Exp. time (s)"]    = self.photonfile.Header["Exp. time (s)"]
-                    self.clipboardDef["Off time (s)"]     = self.photonfile.Header["Off time (s)"]   
-                    self.clipboardDef["Image Address"]    = 4 * b'\x00' 
-                    self.clipboardDef["Data Length"]      = int_to_bytes(len(image))
-                    self.clipboardDef["padding tail"]     = pfStruct_LayerDef [5][1]*b'\x00'
+                    self.clipboardDef["# White pixels"]   = int_to_bytes(whitepixels)
+                    self.clipboardDef["padding"]          = 8* b'\x00'
+                    self.clipboardDef["Resolution X"]     = int_to_bytes(1440)
+                    self.clipboardDef["Resolution Y"]     = int_to_bytes(2560)
+                    self.clipboardDef["Image Addr. delta"]= int_to_bytes(delta)
+                    self.clipboardDef["padding tail"]     = 4* b'\x00'
                     self.clipboardData={}
                     self.clipboardData["Raw"]             = image
-                    self.clipboardData["padding tail"]    = pfStruct_LayerData [1][1]*b'\x00'
+                    self.clipboardData["padding tail"]    = ''
                 if deb: self.printClipboard()
 
-            # Set layerheight correctly
-            if deb: print ("layerNr",layerNr)
-            if layerNr==-1: # no other layer to base layer height on so we start on height = 0
-                self.clipboardDef["Layer height (mm)"] = float_to_bytes(0)
-            elif layerNr==0: # if first layer than the height should start at 0
-                self.clipboardDef["Layer height (mm)"] = float_to_bytes(0)
-            else:          # start at layer height of layer at which we insert
-                curLayerHeight = bytes_to_float(self.photonfile.LayerDefs[layerNr]["Layer height (mm)"])
-                self.clipboardDef["Layer height (mm)"]=float_to_bytes(curLayerHeight)
-    
-            # Calc length of new def
-            defLength=0
-            for key,val in self.clipboardDef.items():
-                defLength=defLength+len(val)
-            if deb:print ("defLength :",defLength)    
-            if deb:print ("taillength:",len(self.photonfile.LayerDefs_padding_tail))
-            
-            # Set start addresses of layer in clipboard, we add 1 layer(def) so add 36 bytes
-            if layerNr==-1:
-                lA=(bytes_to_int(self.photonfile.Header["Layer Defs (addr)"])+
-                    defLength+
-                    len(self.photonfile.LayerDefs_padding_tail)
-                    )
-            else:
-                lA=bytes_to_int(self.photonfile.LayerDefs[layerNr]["Image Address"])+defLength
-                #   if lastlayer we need to add last image length
-                if insertLast: lA=lA+bytes_to_int(self.LayerDefs[layerNr]["Data Length"])
-            
-            # Starts at 55220 with image size of 33071
-            if deb:print ("New Image Address (lA):",lA)
-
-            self.clipboardDef["Image Address"]=int_to_bytes(lA)
-    
             # If we inserting last layer, we correct layerNr
             if insertLast: layerNr = layerNr + 1  # fix temporary reduced layerNr
             if deb:print ("Correct layerNr because last:",layerNr)
-
-            # Shift start addresses of RawData in all LayerDefs due to extra layerdef (36 bytes)
-            if deb:print("Shift image addresses in layerdefs due to new layerdef:")
-            for rLayerNr in range(0,nLayers):
-                curAddr=bytes_to_int(self.LayerDefs[rLayerNr]["Image Address"])
-                newAddr=curAddr+defLength # size of layerdef
-                self.LayerDefs[rLayerNr]["Image Address"]= int_to_bytes(newAddr)
-                if deb:print ("  layerdef",rLayerNr,"from",curAddr,"to",newAddr)
-    
-            # Shift start addresses of RawData in second part of LayerDefs due to extra layerdata
-            if deb:print("Shift image addresses in layerdefs due to new image data:")
-            deltaLayerImgAddress = bytes_to_int(self.clipboardDef["Data Length"]) #+ defLength
-            for rLayerNr in range(layerNr,nLayers):
-                # Adjust image address for removal of image raw data and end byte
-                curAddr=bytes_to_int(self.LayerDefs[rLayerNr]["Image Address"])
-                newAddr=curAddr+deltaLayerImgAddress
-                self.photonfile.LayerDefs[rLayerNr]["Image Address"]= int_to_bytes(newAddr)
-                # Adjust layer starting height for removal of layer
-                curHeight=bytes_to_float(self.LayerDefs[rLayerNr]["Layer height (mm)"])
-                newHeight=curHeight+deltaHeight
-                self.photonfile.LayerDefs[rLayerNr]["Layer height (mm)"] = float_to_bytes(newHeight)
-                #print ("layer, cur, new: ",rLayerNr,curAddr,newAddr, "|", curHeight,newHeight ,">",self.bytes_to_float(self.LayerDefs[rLayerNr]["Layer height (mm)"]))
-                if deb:print ("  layerdef",rLayerNr,"from",curAddr,"to",newAddr)
     
             # Insert layer settings and data and reduce number of layers in header
             if layerNr<nLayers:
@@ -947,12 +953,6 @@ class LayerOps:
             # Make new copy so second paste will not reference this inserted objects
             self.clipboardDef = None #self.photonfile.LayerDefs[layerNr].copy()
             self.clipboardData = None #self.photonfile.LayerData[layerNr].copy()
-
-            # Debug photonfile
-            if deb:
-                print ("Header: Layer Defs (addr):",bytes_to_int(self.photonfile.Header["Layer Defs (addr)"]))
-                for layerNr in range(self.count()):
-                    self.print(layerNr)
 
             # Store new data to history
             if saveToHistory: self.saveToHistory("insert",layerNr)
@@ -1030,7 +1030,46 @@ class LayerOps:
         
         self.insert(image,layerNr,saveToHistory)
         self.delete(layerNr+1,saveToHistory)
+
+    def decodeRLE28bImage(self,rleData):
+        """ Decodes a RLE byte array from PhotonFile layer image to a numpy array
+            Based on: https://gist.github.com/itdaniher/3f57be9f95fce8daaa5a56e44dd13de5
+            Encoding scheme:
+                Lowest bit of each byte is color (black or white)
+                Highest 7 bits of each byte is repetition of that color, with max of 125 / 0x7D
+        """
+        print ("len",len(rleData))
+        nrPixels = 3686400 #(width, height) = (1440, 2560)
+        imgArray = numpy.zeros((nrPixels),dtype=numpy.uint8)
         
+        # Decode bytes to colors and draw lines of that color on the pygame surface
+        idx = 0     
+        bnr=0   
+        for b in rleData:
+            # From each byte retrieve color (highest bit) and number of pixels of that color (lowest 7 bits)
+            val = b & 1  # only read 1st bit
+            nr = ((1 if b & 128 else 0) +
+                  (2 if b & 64  else 0) +
+                  (4 if b & 32  else 0) +
+                  (8 if b & 16  else 0) +
+                  (16 if b & 8  else 0) +
+                  (32 if b & 4  else 0) +
+                  (64 if b & 2  else 0)) + 1 ;
+            if bnr<3:print ("val,nr",val,nr)
+            bnr=bnr+1
+            if val!=0:
+                for i in range(nr):
+                    if (idx+i<nrPixels):
+                        imgArray[idx+i]=255
+                    #else:
+                    #    idx=0    
+                    #    print ("reset")
+                    #    imgArray = numpy.zeros((nrPixels),dtype=numpy.uint8)
+                    #    imgArray[idx+i]=255
+            idx=idx+nr
+        print (imgArray.shape,idx)    
+        return imgArray     
+
     def get(self,layerNr:int,retType:str='image'):
         if layerNr==self.__ALL_LAYERS: 
             if retType[0]=='r':
@@ -1044,7 +1083,10 @@ class LayerOps:
         if retType[0]=='r': #rle array        
             return rleByteArray 
 
-        numpyArray1Duint8 = RLE.decodeRLE28bImage(rleByteArray)
+        print ("RLE>")
+        #numpyArray1Duint8 = RLE.decodeRLE28bImage(rleByteArray)
+        numpyArray1Duint8 = self.decodeRLE28bImage(rleByteArray)
+        print ("    <RLE")
 
         if retType[0]=='b': #byte string (decoded)
             return numpyArray1Duint8.tobytes() 
@@ -1241,15 +1283,13 @@ class LayerOps:
 
     def printClipboard(self):
         print ("Clipboard:")
-        print ("  Layer height (mm): ",bytes_to_float(self.clipboardDef["Layer height (mm)"]))
-        print ("  Exp. time (s)    : ",bytes_to_float(self.clipboardDef["Exp. time (s)"]))
-        print ("  Off time (s)     : ",bytes_to_float(self.clipboardDef["Off time (s)"]))
-        print ("  Image Address    : ",bytes_to_int(self.clipboardDef["Image Address"]))
-        print ("  Data Length      : ",bytes_to_int(self.clipboardDef["Data Length"]))
-        print ("  def padding tail : ",len(self.clipboardDef["padding tail"]),"'"+bytes_to_hex(self.clipboardDef["padding tail"])+"'")
-        print ("  Raw length)      : ",len(self.clipboardData["Raw"]))
-        print ("  Raw padding tail : ",len(self.clipboardData["padding tail"]),"'"+bytes_to_hex(self.clipboardData["padding tail"])+"'")
-
+        print ("  # White pixels    : ",bytes_to_int(self.clipboardDef["# White pixels"]))
+        print ("  padding           : ",bytes_to_hex(self.clipboardDef["padding"]))
+        print ("  Resolution X      : ",bytes_to_int(self.clipboardDef["Resolution X"]))
+        print ("  Resolution Y      : ",bytes_to_int(self.clipboardDef["Resolution Y"]))
+        print ("  Image Addr. delta : ",bytes_to_int(self.clipboardDef["Image Addr. delta"]))
+        print ("  padding tail      : ",bytes_to_hex(self.clipboardDef["padding tail"]))
+        print ("  Raw length        : ",len(self.clipboardData["Raw"]))
 
     def saveToHistory(self, action:str, layerNr:int):
         """ Makes a copy of current /Layer Data to memory
@@ -1519,168 +1559,60 @@ class PhotonSFile:
         if self.filename==None:
             raise Exception("PhotonFile.load needs a .photon filename on init and in the load method.")
 
-        deb=False
+        deb=True
 
         #if deb: self.filename="/home/nard/PhotonFile/test/bunny.photon"
         if deb: print ("File",self.filename)
-        def out(filename):
-            print ("File",filename)
-            with open(filename, "rb") as binary_file:
-                import struct
-                # Start at beginning
-                # 50 (d8): 10.0 - z-lift distance i mm
-                # 58 (d8): 5.0  - z-lift speed in mm/s
-                # 66 (d8): 5.0  - z-retract speed in mm/s
-                # 74 (d8): volume (mm3) of model
-                # 82 (i4): 224 -?
-                # 86 (i4): 42 -?
-                # 90 (i4): 168 -?
-                # 94 (i4): 10 - z-lift distance i mm?
-                # 98 (75264): previewImage
-                # 75362: nrLayers
-                # 75366: first layerdef
-                #       0 (4):nr whitePx 
-                #       4 (8): 0
-                #       12 (4): 1440
-                #       16 (4): 2560
-                #       20 (4): rawDataLength: numbytes*8+32
-                #       24 (4): 2684702720
-                #       28 (4): rawData
-                # 75366 + rawDataLength/2+96
-                print ("@ line 1576")
-                odx=0
-                for idx in range (75366,888888,4):
-                    binary_file.seek(idx)   
-                    bs=binary_file.read(16)                
-                    i=bytes_to_int(bs[:4])
-                    l=bytes_to_int(bs[8:12])                    
-                    p=bytes_to_int(bs[12:16])                    
-                    if i==1440: 
-                        print ("idx:",idx-12, "len:",l,"pad:",p,"diff:",(idx-odx))
-                        odx=idx
-                        #print ("len:",l)
 
-                binary_file.seek(75366+28+240088+12)
-                bs=binary_file.read(32)
-                hx=bytes_to_hex(bs)
-                i=bytes_to_int(bs[:4])
-                #l=struct.unpack('>I',bs[:4])[0]
-                f=bytes_to_float(bs[:4])
-                d=bytes_to_float(bs[:8])
-                print (hx,":",i,f,d)
-                print ("---")
-                for i,nr in ((0,6),
-                            (6,8),  # pixel size (0.47um)
-                            (14,8), # layer thickness
-                            (22,8), # exposure time
-                            (30,8), # off time
-                            (38,8), # bottom exposure time
-                            (46,4)  # bottom layers
-                            ):
-                    binary_file.seek(i)
-                    bs=binary_file.read(nr)
-                    fi=-1
-                    if nr==8:fi=bytes_to_float(bs)
-                    if nr==4:fi=bytes_to_int(bs)
-                    hx=bytes_to_hex(bs)
-                    print (i,hx,fi)
-
-        #out(filename='/home/nard/PhotonFile/test/_bunny1.photons')
-        #out(filename='/home/nard/PhotonFile/test/_bunny2.photons')
-        out(filename='/home/nard/PhotonFile/test/_20x20x20.photons')
-        return    
-        '''
+        #filename='/home/nard/PhotonFile/test/_20x20x20.photons'
+        with open(filename, "rb") as binary_file:
             idx=0 #keeps file pointer, needed to calc padding lengths
 
             # Read HEADER / General settings
             if deb: print ("Header",idx)
             for bTitle, bNr, bType, bEditable,bHint in pfStruct_Header:
-                # Padding can very and needs to be calculated
-                if bTitle=='padding tail':
-                    bNr=bytes_to_int( self.Header['Preview 0 (addr)'])-idx
+                # Padding can vary and needs to be calculated
                 if bNr>0: 
                     self.Header[bTitle] = binary_file.read(bNr)
                 idx=idx+bNr
-                if deb: print ("  ",bTitle,bNr," -> ",idx)
+                if deb: print ("  ",idx,bTitle,bNr," -> ",convBytes(self.Header[bTitle],bType))
 
             # Read PREVIEWS settings and raw image data
-            for previewNr in (0,1):
-                if deb: print ("Preview",previewNr,idx)                
-                for bTitle, bNr, bType, bEditable, bHint in pfStruct_Previews:
-                    # Padding can very and needs to be calculated
-                    if bTitle=='padding':
-                        bNr=bytes_to_int(self.Previews[previewNr]['Image Address'])-idx
-                    if bTitle=='padding tail':
-                        if previewNr==0:
-                            bNr=bytes_to_int(self.Header['Preview 1 (addr)'])-idx
-                        if previewNr==1:
-                            bNr=len(self.Previews[0]["padding tail"])
-
-                    # if rawData0 or rawData1 the number bytes to read is given bij dataSize0 and dataSize1
-                    if bTitle == "Image Data": bNr = dataSize
-                    self.Previews[previewNr][bTitle] = binary_file.read(bNr) if bNr>0 else b''
-                    if bTitle == "Data Length": dataSize = bytes_to_int(self.Previews[previewNr][bTitle])
-                    idx = idx + bNr
-                    if deb: print ("  ",bTitle,bNr," -> ",idx)
+            if deb: print ("Preview",idx)                
+            for bTitle, bNr, bType, bEditable, bHint in pfStruct_Previews:
+                if bNr>0: 
+                    self.Previews[0][bTitle] = binary_file.read(bNr)
+                idx=idx+bNr
+                if deb and bTitle!="Image Data":print ("  ",idx,bTitle,bNr," -> ",convBytes(self.Previews[0][bTitle],bType))
             
-            # Read PREVIEWS TAIL PADDING
-            bNr=bytes_to_int(self.Header['Layer Defs (addr)'])-idx
-            self.Previews_padding_tail = binary_file.read(bNr) if bNr>0 else b''
-            idx=idx+bNr
- 
+            # Read nr of layers into header
+            self.Header[nrLayersString]= binary_file.read(4)
+            idx=idx+4
+
             # Read LAYERDEFS settings
-            nLayers = bytes_to_int(self.Header[nrLayersString])
+            nLayers = bytes_to_int(self.Header[nrLayersString])#//4
+            if deb: print ("nLayers",nLayers)
             self.LayerDefs = [dict() for x in range(nLayers)]
-            # print("nLayers:", nLayers)
-            # print("  hex:", ' '.join(format(x, '02X') for x in self.Header[self.nrLayersString]))
-            # print("  dec:", nLayers)
-            # print("Reading layer meta-info")
+            self.LayerData = [dict() for x in range(nLayers)]
             if deb: print ("LayerDefs",idx)
             for lNr in range(0, nLayers):
+                # Read LayerDef (meta data)                
+                if deb and lNr<3: print ("lNr",lNr)
                 for bTitle, bNr, bType, bEditable, bHint in pfStruct_LayerDef:
                     self.LayerDefs[lNr][bTitle] = binary_file.read(bNr)
+                    if deb and lNr<3: print ("  ",idx,bTitle,bNr," -> ",convBytes(self.LayerDefs[lNr][bTitle],bType))
                     idx=idx+bNr
+                # Read LayerData (image data)
+                delta=bytes_to_int(self.LayerDefs[lNr]["Image Addr. delta"])
+                #newIdx=int(idx+delta/2+68)
+                newIdx=int(idx-4+delta/8)
+                if deb and lNr<3: print ("idx,newIdx",idx,newIdx)
+                bNr=newIdx-idx
+                self.LayerData[lNr]["Raw"] = binary_file.read(bNr)
+                idx=idx+bNr 
+                #if lNr==2:return                   
 
-            # read padding between the defs datablock and first image        
-            bNr =  bytes_to_int(self.LayerDefs[0]["Image Address"])-idx       
-            self.LayerDefs_padding_tail = binary_file.read(bNr) if bNr>0 else b''
-            idx=idx+bNr
-            
-            if deb: print ("LayerDefs padding tail",idx)
-
-            # Read LAYERRAWDATA image data
-            if deb: print ("LayerData",idx)
-            self.LayerData = [dict() for x in range(nLayers)]
-            for lNr in range(0, nLayers):
-                rawDataAddr = bytes_to_int(self.LayerDefs[lNr]["Image Address"])
-                binary_file.seek(rawDataAddr)
-
-                rawDataSize = bytes_to_int(self.LayerDefs[lNr]["Data Length"])
-                # print("  layer: ", lNr, " size: ",rawDataSize)
-                self.LayerData[lNr]["Raw"] = binary_file.read(rawDataSize) # b'}}}}}}}}}}
-                idx=idx+rawDataSize
-
-                # Read padding between the raw datablocks         
-                if lNr<nLayers-1: # Padding between datablocks
-                    bNr = bytes_to_int(self.LayerDefs[lNr+1]["Image Address"])-(rawDataAddr+rawDataSize)
-                    self.LayerData[lNr]["padding tail"] = binary_file.read(bNr)
-                else: # Padding from last datablock to end of file
-                    self.LayerData[lNr]["padding tail"] = binary_file.read(-1) 
-                    bNr=len(self.LayerData[lNr]["padding tail"])
-                idx=idx+bNr
-                if deb and bNr>0: print (f"  Layer {lNr} has tail of {bNr} bytes.")
-
-            # correct padding last layer 
-            self.LayerDefs_padding_tail = b''
-            if nLayers>1:
-                lastPaddingBytes = self.LayerData[nLayers-1]["padding tail"]
-                prevPaddingBytes = self.LayerData[nLayers-2]["padding tail"]
-                lastPaddingLen = len(lastPaddingBytes)
-                prevPaddingLen = len(prevPaddingBytes)
-                if lastPaddingLen>prevPaddingLen:
-                    self.LayerData[nLayers-1]["padding tail"]=lastPaddingBytes[:prevPaddingLen]
-                    self.LayerDatas_padding_tail=lastPaddingBytes[prevPaddingLen:]
-
+            deb=True
             if deb:
                 print (f"Finished reading {idx} bytes.")
                 print (f"File has {os.path.getsize(self.filename)} bytes.")
@@ -1690,9 +1622,8 @@ class PhotonSFile:
         self.previews = PreviewOps(self,self.Previews)     
 
         # Set pfStructs
-        signatureName = self.signature()
-        set_pfStruct(signatureName)   
-        '''
+        #signatureName = self.signature()
+        #set_pfStruct(signatureName)   
 
     def save(self, newfilename:str=None):
         """ Writes the photofile from memory to disk. """
@@ -1709,62 +1640,96 @@ class PhotonSFile:
 
             # Start at beginning
             binary_file.seek(0)
+            idx=0
 
             # Write HEADER / General settings
             for bTitle, bNr, bType, bEditable,bHint in pfStruct_Header:
                 binary_file.write(self.Header[bTitle])
+                idx=idx+bNr
             
             if deb: 
                 binary_file.flush()
                 print ("Header:",os.path.getsize(newfilename))
 
             # Write PREVIEWS settings and raw image data
-            for previewNr in (0, 1):
+            for previewNr in (0,):
                 for bTitle, bNr, bType, bEditable, bHint in pfStruct_Previews:
                     binary_file.write(self.Previews[previewNr][bTitle])
-            
-            binary_file.write(self.Previews_padding_tail)
+                    idx=idx+bNr
             
             if deb:
                 binary_file.flush()
                 print ("Previews:",os.path.getsize(newfilename))
 
-            # Read LAYERDEFS settings
+            # Write nr of layers (stored in header)
+            binary_file.write(self.Header[nrLayersString])
+            idx=idx+4
+
+            # Write LAYERDEFS settings
             nLayers = self.layers.count()
             for lNr in range(0, nLayers):
                 #print("  layer: ", lNr)
                 #print("    def: ", self.LayerDefs[lNr])
+                delta = 24+8+8*len(self.LayerData[lNr]['Raw'])
+                self.LayerDefs[lNr]["Image Addr. delta"]=int_to_bytes(delta)
                 for bTitle, bNr, bType, bEditable, bHint in pfStruct_LayerDef:
                     binary_file.write(self.LayerDefs[lNr][bTitle])
-
-            if deb:
-                binary_file.flush()
-                print ("LayerDefs:",os.path.getsize(newfilename))
-
-            # Write padding between LAYERDEFS and LAYERDATA (probably 0) 
-            binary_file.write(self.LayerDefs_padding_tail)
-
-            # Read LAYERRAWDATA image data
-            # print("Reading layer image-info")
-            for lNr in range(0, nLayers):
-                binary_file.write(self.LayerData[lNr]["Raw"])
-                binary_file.write(self.LayerData[lNr]["padding tail"])
-                pass
-
-            # Write padding between LAYERDEFS and LAYERDATA (probably 0) 
-            binary_file.write(self.LayerDatas_padding_tail)
+                    idx=idx+bNr
+                #idx=idx-4 # padding is not really necessary
+                binary_file.write(self.LayerData[lNr]['Raw'])
+                idx=idx+len(self.LayerData[lNr]['Raw'])
 
             if deb:
                 binary_file.flush()
                 print ("LayerData:",os.path.getsize(newfilename))
+            deb=True
+            if deb:
+                print (f"Finished writing {idx} bytes.")
+                print (f"File has {os.path.getsize(self.filename)} bytes.")
 
    
 def main():
     t=time.time()
 
     photonfile=PhotonSFile()    
-    photonfile.load('/home/nard/PhotonFile/test/bunny.photons')
-     
+    file_bare='/home/nard/PhotonFile/test/_20x20x20'
+    #file_bare='/home/nard/PhotonFile/test/bunny'
+    file_old=file_bare+'.photons'
+    file_new=file_bare+'_new.photons'
+    photonfile.load(file_old)
+    #photonfile.load('/home/nard/PhotonFile/test/bunny.photons')
+    #photonfile.previews.save("/home/nard/PhotonFile/test/prev.png",0)
+    #print ("Count:",photonfile.layers.count())
+    #photonfile.layers.save(1400,"/home/nard/PhotonFile/test/")
+    #photonfile.layers.replace(10,"/home/nard/PhotonFile/test/bunny.photons-0190.png")
+
+    # first test if insert works
+    '''
+    rle=photonfile.LayerData[10]["Raw"]
+    whitepixels=photonfile.layers.getProperty(10,"# White pixels")
+    photonfile.layers.insert(rle,10,False,whitepixels)
+    photonfile.save(file_new)
+    print ("RELOAD")
+    photonfile.load(file_new)
+    '''
+
+    # second test if encode works
+    image=cv2.imread("/home/nard/PhotonFile/test/bunny.photons-0190.png")
+    if image.ndim==3: image=image[:,:,0]
+    # Check if correct size
+    if image.shape != (2560,1440) or image.dtype!=numpy.uint8: # Numpy Array dimensions are switched from PIL.Image dimensions
+        raise Exception(f"LayerOps.insert needs an CV2 Image with dimensions of 1440x2560 and 8 bit. Got {image.shape[0]}x{image.shape[1]}x{24 if image.ndim==3 else 8} ({image.dtype})")
+    npArray_1D_uint8=image.flatten()#.astype(numpy.uint8)        
+    print ("ENCODING...")
+    rleByteArray,whitepixels=photonfile.layers.encode8bImage2RLE(npArray_1D_uint8)
+    photonfile.layers.insert(rleByteArray,10,False,whitepixels)
+    photonfile.save(file_new)
+    print ("...SAVED")
     
+    #todo 
+    # encode layer image from disk
+    # encode preview image from disk
+    
+
 if __name__ == '__main__':
     main()
